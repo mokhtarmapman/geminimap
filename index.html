@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- إعداد سياسة الإحالة لمنع حظر خوادم الخرائط -->
+  <meta name="referrer" content="origin" />
+  <title>الأطلس الجغرافي التفاعلي للمدن الرئيسية في مصر</title>
+
+  <!-- خط القاهرة من Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- مكتبة Leaflet.js للخرائط التفاعلية -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <!-- مكتبة Tailwind CSS للتنسيق -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- أيقونات FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            cairo: ['Cairo', 'sans-serif'],
+          },
+          colors: {
+            nile: {
+              950: '#040914',
+              900: '#0a1329',
+              800: '#112042',
+              700: '#1b3163',
+            },
+            gold: {
+              400: '#fbbf24',
+              500: '#f59e0b',
+              600: '#d97706',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    * {
+      font-family: 'Cairo', sans-serif;
+      box-sizing: border-box;
+    }
+
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background-color: #040914;
+      color: #f8fafc;
+    }
+
+    #map {
+      height: 100%;
+      width: 100%;
+      z-index: 1;
+      background: radial-gradient(circle at center, #0c1938 0%, #050b18 100%);
+    }
+
+    /* فلتر الوضع الليلي الاحترافي لخرائط Esri World Street & Shaded Relief */
+    .esri-dark-filter {
+      filter: invert(100%) hue-rotate(195deg) brightness(92%) contrast(105%) saturate(130%);
+    }
+
+    /* تخصيص شريط التمرير */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(10, 19, 41, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(245, 158, 11, 0.45);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(245, 158, 11, 0.8);
+    }
+
+    /* تخصيص نافذة Leaflet المنبثقة */
+    .leaflet-popup-content-wrapper {
+      background: rgba(10, 19, 41, 0.96) !important;
+      backdrop-filter: blur(14px);
+      color: #f8fafc !important;
+      border: 1px solid rgba(245, 158, 11, 0.45);
+      border-radius: 16px !important;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.75) !important;
+      padding: 0 !important;
+    }
+    .leaflet-popup-content {
+      margin: 0 !important;
+      width: 300px !important;
+      direction: rtl;
+      text-align: right;
+    }
+    .leaflet-popup-tip {
+      background: rgba(10, 19, 41, 0.96) !important;
+      border: 1px solid rgba(245, 158, 11, 0.45);
+    }
+    .leaflet-container a.leaflet-popup-close-button {
+      color: #94a3b8 !important;
+      left: 10px !important;
+      right: auto !important;
+      top: 10px !important;
+      font-size: 20px !important;
+      width: 26px !important;
+      height: 26px !important;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    .leaflet-container a.leaflet-popup-close-button:hover {
+      color: #fbbf24 !important;
+      background: rgba(245, 158, 11, 0.2);
+    }
+
+    /* علامات المدن المخصصة مع النبض */
+    .city-marker-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .city-pulse {
+      position: absolute;
+      border-radius: 50%;
+      animation: pulse-ring 2.6s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+      pointer-events: none;
+    }
+    .city-core {
+      position: relative;
+      z-index: 2;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 16px rgba(0,0,0,0.85);
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+      border: 2.5px solid #ffffff;
+    }
+    .city-marker-wrapper:hover .city-core {
+      transform: scale(1.25);
+    }
+
+    @keyframes pulse-ring {
+      0% {
+        transform: scale(0.75);
+        opacity: 0.85;
+      }
+      80%, 100% {
+        transform: scale(2.35);
+        opacity: 0;
+      }
+    }
+
+    /* تسميات المدن الثابتة على الخريطة */
+    .city-label-tooltip {
+      background: rgba(10, 19, 41, 0.88) !important;
+      border: 1px solid rgba(255, 255, 255, 0.2) !important;
+      color: #f8fafc !important;
+      font-family: 'Cairo', sans-serif !important;
+      font-weight: 700 !important;
+      font-size: 11.5px !important;
+      padding: 2px 8px !important;
+      border-radius: 6px !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+      white-space: nowrap;
+    }
+    .city-label-tooltip::before {
+      display: none !important;
+    }
+
+    /* تسميات المسطحات المائية والأقاليم في الخريطة المتجهية */
+    .geo-water-label {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      color: rgba(56, 189, 248, 0.65) !important;
+      font-family: 'Cairo', sans-serif !important;
+      font-weight: 700 !important;
+      font-size: 13px !important;
+      letter-spacing: 1px;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.9);
+      pointer-events: none;
+    }
+
+    /* أزرار التحكم بالتكبير والتصغير */
+    .leaflet-control-zoom {
+      border: 1px solid rgba(245, 158, 11, 0.3) !important;
+      border-radius: 12px !important;
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
+    }
+    .leaflet-control-zoom a {
+      background-color: rgba(10, 19, 41, 0.92) !important;
+      color: #f8fafc !important;
+      border-bottom: 1px solid rgba(255,255,255,0.1) !important;
+      width: 36px !important;
+      height: 36px !important;
+      line-height: 36px !important;
+    }
+    .leaflet-control-zoom a:hover {
+      background-color: #f59e0b !important;
+      color: #040914 !important;
+    }
+
+    .glass-panel {
+      background: rgba(10, 19, 41, 0.88);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* شبكة إحداثيات الخلفية الجغرافية */
+    .gis-grid-bg {
+      background-size: 40px 40px;
+      background-image: 
+        linear-gradient(to right, rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+    }
+  </style>
+</head>
+<body class="flex flex-col h-screen w-screen overflow-hidden select-none">
+
+  <!-- الشريط العلوي (Header) -->
+  <header class="glass-panel z-30 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/25 shadow-lg">
+    <!-- الشعار والعنوان -->
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-nile-950 shadow-md shadow-amber-500/20">
+        <i class="fa-solid fa-earth-africa text-xl"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-base md:text-lg font-extrabold tracking-wide text-white">
+            الأطلس الجغرافي التفاعلي لمدن مصر
+          </h1>
+          <span class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            <i class="fa-solid fa-circle-check text-[9px]"></i> Esri GIS & Vector
+          </span>
+        </div>
+        <p class="text-[11px] text-slate-400 hidden sm:block">
+          قاعدة بيانات مكانية وديموغرافية للمراكز الحضرية الكبرى في جمهورية مصر العربية (تعمل بدون API Key)
+        </p>
+      </div>
+    </div>
+
+    <!-- إحصائيات سريعة في الهيدر -->
+    <div class="hidden xl:flex items-center gap-5 bg-nile-950/75 px-4 py-1.5 rounded-xl border border-slate-800">
+      <div class="flex items-center gap-2.5">
+        <i class="fa-solid fa-city text-amber-400 text-sm"></i>
+        <div>
+          <div class="text-[10px] text-slate-400">المدن المعروضة</div>
+          <div class="text-sm font-extrabold text-white" id="stat-cities-count">20 مدينة</div>
+        </div>
+      </div>
+      <div class="h-6 w-px bg-slate-800"></div>
+      <div class="flex items-center gap-2.5">
+        <i class="fa-solid fa-users text-emerald-400 text-sm"></i>
+        <div>
+          <div class="text-[10px] text-slate-400">مجموع سكان الحواضر المختارة</div>
+          <div class="text-sm font-extrabold text-emerald-300" id="stat-total-pop">31.3 مليون نسمة</div>
+        </div>
+      </div>
+      <div class="h-6 w-px bg-slate-800"></div>
+      <div class="flex items-center gap-2.5">
+        <i class="fa-solid fa-layer-group text-sky-400 text-sm"></i>
+        <div>
+          <div class="text-[10px] text-slate-400">الأقاليم الجغرافية</div>
+          <div class="text-sm font-extrabold text-sky-300">6 أقاليم رئيسية</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- أزرار التحكم السريع -->
+    <div class="flex items-center gap-2">
+      <!-- زر إظهار/إخفاء حدود مصر ونهر النيل -->
+      <button id="btn-toggle-vectors" onclick="toggleEgyptVectors()" class="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 text-xs font-bold flex items-center gap-1.5 transition" title="إظهار/إخفاء طبقة نهر النيل والحدود">
+        <i class="fa-solid fa-bezier-curve"></i>
+        <span class="hidden md:inline">طبقة النيل والحدود</span>
+      </button>
+
+      <!-- زر إعادة ضبط العرض -->
+      <button onclick="resetMapView()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition" title="إعادة ضبط خريطة مصر">
+        <i class="fa-solid fa-compress-arrows-alt text-amber-400"></i>
+        <span class="hidden sm:inline">كل مصر</span>
+      </button>
+
+      <!-- زر القائمة في الشاشات الصغيرة -->
+      <button onclick="toggleMobileSidebar()" class="lg:hidden px-3 py-1.5 rounded-lg bg-amber-500 text-nile-950 font-bold text-xs flex items-center gap-1.5">
+        <i class="fa-solid fa-bars"></i>
+        <span>المدن</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- المحتوى الرئيسي (لوحة جانبية + الخريطة) -->
+  <div class="relative flex-1 flex overflow-hidden">
+
+    <!-- اللوحة الجانبية اليمنى (Sidebar) -->
+    <aside id="sidebar" class="glass-panel z-20 w-80 sm:w-96 flex flex-col border-l border-slate-800/80 transition-transform duration-300 absolute lg:relative right-0 top-0 bottom-0 translate-x-0">
+      
+      <!-- قسم البحث والتصفية -->
+      <div class="p-3.5 border-b border-slate-800/90 space-y-3">
+        <!-- مربع البحث -->
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+          <input
+            id="search-input"
+            type="text"
+            placeholder="ابحث عن مدينة، إقليم، أو نشاط اقتصادي..."
+            class="w-full bg-nile-950/90 text-white placeholder-slate-400 text-xs rounded-xl pr-9 pl-8 py-2.5 border border-slate-700/80 focus:outline-none focus:border-amber-400 transition"
+          />
+          <button id="clear-search" onclick="clearSearch()" class="hidden absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs">
+            <i class="fa-solid fa-circle-xmark"></i>
+          </button>
+        </div>
+
+        <!-- فلاتر الأقاليم الجغرافية -->
+        <div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 mb-1.5">
+            <span>تصفية حسب الإقليم الجغرافي:</span>
+            <span id="active-filter-count" class="text-amber-400 font-bold">المعروض (20)</span>
+          </div>
+          <div id="region-filters" class="flex gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+            <!-- يتم توليد الأزرار عبر JavaScript -->
+          </div>
+        </div>
+
+        <!-- الترتيب حسب -->
+        <div class="flex items-center justify-between gap-2 pt-1">
+          <span class="text-[11px] text-slate-400 whitespace-nowrap"><i class="fa-solid fa-arrow-down-wide-short ml-1 text-amber-400"></i>الترتيب:</span>
+          <select id="sort-select" onchange="renderCityList()" class="flex-1 bg-nile-950/90 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 border border-slate-700/80 focus:outline-none focus:border-amber-400">
+            <option value="pop-desc">الأعلى سكاناً أولاً</option>
+            <option value="pop-asc">الأقل سكاناً أولاً</option>
+            <option value="name-asc">الترتيب الأبجدي (أ - ي)</option>
+            <option value="north-south">جغرافياً (من الشمال للجنوب)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- قائمة المدن التفاعلية -->
+      <div id="cities-list" class="flex-1 overflow-y-auto p-3 space-y-2">
+        <!-- يتم توليد بطاقات المدن هنا -->
+      </div>
+
+      <!-- تذييل اللوحة الجانبية -->
+      <div class="p-3 bg-nile-950/90 border-t border-slate-800/80 text-[11px] text-slate-400 flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-slate-300">توزيع السكان حسب الأقاليم</span>
+          <label class="flex items-center gap-1.5 cursor-pointer text-amber-400 hover:underline">
+            <input type="checkbox" id="toggle-labels" onchange="toggleCityLabels(this.checked)" class="accent-amber-500 rounded" checked>
+            <span>إظهار الأسماء دائماً</span>
+          </label>
+        </div>
+        <!-- شريط التوزيع الإقليمي -->
+        <div class="w-full h-2 rounded-full overflow-hidden flex bg-slate-800" id="region-distribution-bar"></div>
+      </div>
+    </aside>
+
+    <!-- منطقة الخريطة التفاعلية -->
+    <main class="flex-1 relative h-full w-full overflow-hidden">
+      <div id="map" class="gis-grid-bg"></div>
+
+      <!-- شريط التبديل الفوري لأنماط الخرائط (لا يحتاج API Key ولا يحظر) -->
+      <div class="glass-panel absolute top-4 left-4 z-20 p-1.5 rounded-xl border border-slate-700/80 shadow-xl flex flex-wrap items-center gap-1">
+        <button onclick="switchBaseMap('esri_dark')" id="bm-esri_dark" class="basemap-btn px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-amber-500 text-nile-950 shadow">
+          <i class="fa-solid fa-moon"></i>
+          <span>الوضع الليلي (Esri)</span>
+        </button>
+        <button onclick="switchBaseMap('satellite')" id="bm-satellite" class="basemap-btn px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:bg-slate-800/70">
+          <i class="fa-solid fa-satellite"></i>
+          <span>قمر صناعي</span>
+        </button>
+        <button onclick="switchBaseMap('streets')" id="bm-streets" class="basemap-btn px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:bg-slate-800/70">
+          <i class="fa-solid fa-map"></i>
+          <span>خريطة الشوارع</span>
+        </button>
+        <button onclick="switchBaseMap('natgeo')" id="bm-natgeo" class="basemap-btn px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:bg-slate-800/70">
+          <i class="fa-solid fa-mountain-sun"></i>
+          <span>طبيعية / تضاريس</span>
+        </button>
+        <button onclick="switchBaseMap('vector_only')" id="bm-vector_only" class="basemap-btn px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:bg-slate-800/70" title="خريطة متجهية مدمجة بالكامل تعمل حتى بدون إنترنت">
+          <i class="fa-solid fa-draw-polygon"></i>
+          <span>أطلس متجهي (GIS)</span>
+        </button>
+      </div>
+
+      <!-- دليل الخريطة (Legend) -->
+      <div class="glass-panel absolute bottom-5 right-5 z-20 p-3 rounded-2xl border border-slate-700/80 shadow-xl max-w-xs hidden sm:block">
+        <div class="text-xs font-bold text-white mb-2 flex items-center justify-between">
+          <span><i class="fa-solid fa-compass text-amber-400 ml-1.5"></i>دليل الأقاليم والأحجام</span>
+          <span class="text-[10px] text-slate-400 font-normal">حجم الدائرة = السكان</span>
+        </div>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]" id="map-legend-items">
+          <!-- يتم ملؤه ديناميكياً -->
+        </div>
+        <div class="mt-2.5 pt-2 border-t border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+          <div class="flex items-center gap-1.5">
+            <span class="w-4 h-4 rounded-full border-2 border-amber-400 bg-amber-400/20 inline-block"></span>
+            <span>حاضرة مليونية (+1M)</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="w-4 h-0.5 bg-sky-400 inline-block"></span>
+            <span>نهر النيل وقناة السويس</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- بطاقة تفاصيل المدينة المختارة (أسفل يسار الخريطة) -->
+      <div id="selected-city-card" class="glass-panel absolute bottom-5 left-5 z-20 w-80 sm:w-96 rounded-2xl border border-amber-500/40 shadow-2xl p-4 transition-all duration-300 hidden">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex items-center gap-2.5">
+            <div id="card-icon-box" class="w-11 h-11 rounded-xl flex items-center justify-center text-white text-lg shadow-inner">
+              <i id="card-icon" class="fa-solid fa-landmark"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 id="card-title" class="text-base font-extrabold text-white">القاهرة</h2>
+                <span id="card-en-title" class="text-[11px] text-slate-400 font-medium">Cairo</span>
+              </div>
+              <span id="card-region-badge" class="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-0.5">
+                إقليم القاهرة الكبرى
+              </span>
+            </div>
+          </div>
+          <button onclick="closeCityCard()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800/60 transition">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <p id="card-desc" class="text-xs text-slate-300 mt-3 leading-relaxed"></p>
+
+        <!-- مؤشرات رقمية -->
+        <div class="grid grid-cols-3 gap-2 my-3">
+          <div class="bg-nile-950/80 border border-slate-800 rounded-xl p-2 text-center">
+            <div class="text-[10px] text-slate-400">التعداد التقديري</div>
+            <div id="card-pop" class="text-xs font-extrabold text-amber-400 mt-0.5">10.3 مليون</div>
+          </div>
+          <div class="bg-nile-950/80 border border-slate-800 rounded-xl p-2 text-center">
+            <div class="text-[10px] text-slate-400">المرتبة وطنياً</div>
+            <div id="card-rank" class="text-xs font-extrabold text-emerald-400 mt-0.5">المركز #1</div>
+          </div>
+          <div class="bg-nile-950/80 border border-slate-800 rounded-xl p-2 text-center">
+            <div class="text-[10px] text-slate-400">الإحداثيات</div>
+            <div id="card-coords" class="text-[11px] font-bold text-sky-400 mt-0.5 dir-ltr">30.04°N, 31.23°E</div>
+          </div>
+        </div>
+
+        <!-- الأنشطة الاقتصادية والمعالم -->
+        <div class="space-y-2 text-xs">
+          <div class="flex items-center gap-1.5 text-slate-300">
+            <i class="fa-solid fa-briefcase text-amber-400 w-4"></i>
+            <span class="text-slate-400">الاقتصاد:</span>
+            <span id="card-economy" class="font-semibold text-white"></span>
+          </div>
+          <div class="flex items-start gap-1.5 text-slate-300">
+            <i class="fa-solid fa-star text-amber-400 w-4 mt-1"></i>
+            <span class="text-slate-400 whitespace-nowrap">أبرز المعالم:</span>
+            <div id="card-landmarks" class="flex flex-wrap gap-1"></div>
+          </div>
+        </div>
+
+        <!-- أزرار تفاعلية بالبطاقة -->
+        <div class="mt-3.5 pt-2.5 border-t border-slate-800 flex items-center justify-between gap-2">
+          <button id="card-zoom-btn" class="flex-1 py-1.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-nile-950 font-bold text-xs flex items-center justify-center gap-1.5 transition">
+            <i class="fa-solid fa-magnifying-glass-plus"></i>
+            <span>تقريب الكاميرا للمدينة</span>
+          </button>
+          <button onclick="resetMapView()" class="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition">
+            عرض شامل
+          </button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. تعريف الأقاليم الجغرافية وألوانها
+    // ==========================================
+    const REGIONS = {
+      all: { name: 'كل الأقاليم', color: '#f59e0b' },
+      cairo: { name: 'القاهرة الكبرى', color: '#f59e0b' },       // ذهبي
+      delta: { name: 'الدلتا والوجه البحري', color: '#10b981' }, // أخضر زمردي
+      canal: { name: 'إقليم قناة السويس', color: '#06b6d4' },    // سماوي
+      upper: { name: 'صعيد مصر (الوادي)', color: '#a855f7' },   // بنفسجي
+      redsea: { name: 'البحر الأحمر وسيناء', color: '#f43f5e' }, // وردي/أحمر
+      west: { name: 'مطروح والصحراء الغربية', color: '#eab308' } // أصفر صحراوي
+    };
+
+    // ==========================================
+    // 2. قاعدة بيانات المدن الرئيسية (20 مدينة مصرية)
+    // ==========================================
+    const EGYPT_CITIES = [
+      {
+        id: 'cairo',
+        name: 'القاهرة',
+        nameEn: 'Cairo',
+        region: 'cairo',
+        lat: 30.0444,
+        lng: 31.2357,
+        population: 10300000,
+        popFormatted: '10.3 مليون نسمة',
+        role: 'العاصمة السياسية والإدارية',
+        icon: 'fa-landmark-dome',
+        economy: 'الإدارة الحكومية، المال والأعمال، السياحة الثقافية، الصناعة',
+        landmarks: ['قلعة صلاح الدين', 'برج القاهرة', 'المتحف المصري بالتحرير', 'القاهرة التاريخية'],
+        description: 'أكبر حاضرة سكانية في مصر وأفريقيا والوطن العربي، تمثل المركز السياسي والاقتصادي والثقافي الأول للدولة المصرية على ضفاف نهر النيل.'
+      },
+      {
+        id: 'alexandria',
+        name: 'الإسكندرية',
+        nameEn: 'Alexandria',
+        region: 'delta',
+        lat: 31.2001,
+        lng: 29.9187,
+        population: 5600000,
+        popFormatted: '5.6 مليون نسمة',
+        role: 'العاصمة الثانية والميناء الأول',
+        icon: 'fa-anchor',
+        economy: 'التجارة البحرية والموانئ، الصناعات البتروكيماوية، السياحة الساحلية',
+        landmarks: ['مكتبة الإسكندرية', 'قلعة قايتباي', 'عمود السواري', 'قصر المنتزه'],
+        description: 'عروس البحر الأبيض المتوسط وأكبر الموانئ التجارية في مصر، تستحوذ على نصيب كبير من التجارة الخارجية والنشاط الصناعي.'
+      },
+      {
+        id: 'giza',
+        name: 'الجيزة',
+        nameEn: 'Giza',
+        region: 'cairo',
+        lat: 30.0131,
+        lng: 31.2089,
+        population: 4600000,
+        popFormatted: '4.6 مليون نسمة',
+        role: 'عاصمة السياحة الأثرية والتعليم الجامعي',
+        icon: 'fa-monument',
+        economy: 'السياحة الأثرية العالمية، التعليم الجامعي، الخدمات، الصناعات الغذائية',
+        landmarks: ['أهرامات الجيزة وأبو الهول', 'المتحف المصري الكبير', 'جامعة القاهرة', 'مدينة الإنتاج الإعلامي'],
+        description: 'الضلع الغربي لإقليم القاهرة الكبرى، تحتضن أهرامات الجيزة الخالدة والمتحف المصري الكبير وأعرق المؤسسات الأكاديمية.'
+      },
+      {
+        id: 'shubra',
+        name: 'شبرا الخيمة',
+        nameEn: 'Shubra El Kheima',
+        region: 'cairo',
+        lat: 30.1286,
+        lng: 31.2422,
+        population: 1280000,
+        popFormatted: '1.28 مليون نسمة',
+        role: 'قلعة الصناعة بشمال القاهرة الكبرى',
+        icon: 'fa-industry',
+        economy: 'الغزل والنسيج، الصناعات الهندسية والمعدنية، الصناعات الكيماوية',
+        landmarks: ['قصر محمد علي بشبرا', 'المناطق الصناعية الكبرى', 'كورنيش النيل بشبرا'],
+        description: 'أكبر مدن محافظة القليوبية والامتداد الصناعي والسكاني الشمالي لإقليم القاهرة الكبرى على الضفة الشرقية للنيل.'
+      },
+      {
+        id: 'mansoura',
+        name: 'المنصورة',
+        nameEn: 'Mansoura',
+        region: 'delta',
+        lat: 31.0409,
+        lng: 31.3785,
+        population: 680000,
+        popFormatted: '680 ألف نسمة',
+        role: 'عاصمة الدقهلية وعاصمة الطب في مصر',
+        icon: 'fa-user-doctor',
+        economy: 'الخدمات الطبية المتخصصة، التعليم الجامعي، الزراعة والتجارة الداخلية',
+        landmarks: ['جامعة المنصورة والمراكز الطبية', 'دار ابن لقمان', 'كورنيش النيل (فرع دمياط)', 'مسجد الصالح أيوب'],
+        description: 'حاضرة شرق الدلتا على الضفة الشرقية لفرع دمياط، تشتهر عالمياً وإقليمياً بمراكزها الطبية الجامعية الرائدة وتاريخها العريق.'
+      },
+      {
+        id: 'portsaid',
+        name: 'بورسعيد',
+        nameEn: 'Port Said',
+        region: 'canal',
+        lat: 31.2653,
+        lng: 32.3019,
+        population: 790000,
+        popFormatted: '790 ألف نسمة',
+        role: 'البوابة الشمالية لقناة السويس',
+        icon: 'fa-ship',
+        economy: 'الملاحة الدولية، التجارة الحرة، الخدمات اللوجستية، صيد الأسماك',
+        landmarks: ['المدخل الشمالي لقناة السويس', 'ميناء شرق بورسعيد المحوري', 'قاعدة تمثال ديليسبس', 'مدينة بورفؤاد'],
+        description: 'مدينة باسلة تقع عند التقاء قناة السويس بالبحر المتوسط، وتعد ركيزة أساسية في المنطقة الاقتصادية لقناة السويس.'
+      },
+      {
+        id: 'suez',
+        name: 'السويس',
+        nameEn: 'Suez',
+        region: 'canal',
+        lat: 29.9668,
+        lng: 32.5498,
+        population: 760000,
+        popFormatted: '760 ألف نسمة',
+        role: 'المدخل الجنوبي للقناة وعاصمة البترول',
+        icon: 'fa-oil-well',
+        economy: 'تكرير البترول والبتروكيماويات، الموانئ البحرية، الصناعات الثقيلة',
+        landmarks: ['المدخل الجنوبي لقناة السويس', 'موانئ السويس والعين السخنة', 'متحف السويس القومي'],
+        description: 'تقع على رأس خليج السويس وتعد المركز الرئيسي لتكرير النفط في مصر والبوابة الجنوبية للملاحة عبر قناة السويس.'
+      },
+      {
+        id: 'tanta',
+        name: 'طنطا',
+        nameEn: 'Tanta',
+        region: 'delta',
+        lat: 30.7865,
+        lng: 31.0004,
+        population: 590000,
+        popFormatted: '590 ألف نسمة',
+        role: 'عاصمة محافظة الغربية وقلب الدلتا النابض',
+        icon: 'fa-train-subway',
+        economy: 'التجارة الإقليمية، الصناعات الغذائية والزيوت، شبكة النقل والسكك الحديدية',
+        landmarks: ['المسجد الأحمدي', 'جامعة طنطا', 'متحف طنطا القومي'],
+        description: 'تتوسط دلتا النيل جغرافياً وتعد عقدة المواصلات والسكك الحديدية والتجارة الأهم في الوجه البحري.'
+      },
+      {
+        id: 'mahalla',
+        name: 'المحلة الكبرى',
+        nameEn: 'El Mahalla El Kubra',
+        region: 'delta',
+        lat: 30.9706,
+        lng: 31.1669,
+        population: 620000,
+        popFormatted: '620 ألف نسمة',
+        role: 'قلعة صناعة الغزل والنسيج المصرية',
+        icon: 'fa-shirt',
+        economy: 'صناعة الغزل والنسيج والملابس الجاهزة، التجارة، الصناعات الهندسية',
+        landmarks: ['شركة مصر للغزل والنسيج', 'أبراج الساعة التاريخية', 'المساجد الأثرية بالمحلة'],
+        description: 'أكبر قلعة صناعية للغزل والنسيج في الشرق الأوسط، تقع في قلب محافظة الغربية وتتميز بكثافة سكانية وصناعية عالية.'
+      },
+      {
+        id: 'asyut',
+        name: 'أسيوط',
+        nameEn: 'Asyut',
+        region: 'upper',
+        lat: 27.1810,
+        lng: 31.1837,
+        population: 560000,
+        popFormatted: '560 ألف نسمة',
+        role: 'عاصمة صعيد مصر التجارية والعلمية',
+        icon: 'fa-graduation-cap',
+        economy: 'التعليم الجامعي، التجارة، تكرير البترول والأسمنت، الزراعة',
+        landmarks: ['قناطر أسيوط الجديدة والقديمة', 'جامعة أسيوط العريقة', 'دير درنكة', 'الهضبة الغربية'],
+        description: 'تتوسط محافظات الوجه القبلي وتعد المركز التجاري والتعليمي والصناعي الأكبر في صعيد مصر.'
+      },
+      {
+        id: 'ismailia',
+        name: 'الإسماعيلية',
+        nameEn: 'Ismailia',
+        region: 'canal',
+        lat: 30.5965,
+        lng: 32.2715,
+        population: 450000,
+        popFormatted: '450 ألف نسمة',
+        role: 'عروس القناة ومقر هيئة قناة السويس',
+        icon: 'fa-water',
+        economy: 'إدارة الملاحة الدولية، الزراعة والتصدير، السياحة الداخلية، التكنولوجيا',
+        landmarks: ['بحيرة التمساح', 'مبنى إرشاد هيئة قناة السويس', 'قناة السويس الجديدة', 'متحف الإسماعيلية'],
+        description: 'تقع في منتصف قناة السويس على ضفاف بحيرة التمساح، وتتميز بتخطيطها العمراني الأخضر وإدارتها للمجرى الملاحي العالمي.'
+      },
+      {
+        id: 'fayoum',
+        name: 'الفيوم',
+        nameEn: 'Faiyum',
+        region: 'upper',
+        lat: 29.3084,
+        lng: 30.8428,
+        population: 530000,
+        popFormatted: '530 ألف نسمة',
+        role: 'واحة مصر الخضراء ومنخفض الفيوم',
+        icon: 'fa-leaf',
+        economy: 'الزراعة وإنتاج الفاكهة، السياحة البيئية والأثرية، الحرف التراثية (الفخار)',
+        landmarks: ['بحيرة قارون', 'محمية وادي الريان ووادي الحيتان', 'سواقي الفيوم التاريخية', 'قرية تونس'],
+        description: 'منخفض طبيعي خصب يتصل بنهر النيل عبر بحر يوسف، يجمع بين الطبيعة الزراعية والصحراوية والبحيرات والمحميات الجيولوجية.'
+      },
+      {
+        id: 'zagazig',
+        name: 'الزقازيق',
+        nameEn: 'Zagazig',
+        region: 'delta',
+        lat: 30.5877,
+        lng: 31.5020,
+        population: 460000,
+        popFormatted: '460 ألف نسمة',
+        role: 'عاصمة محافظة الشرقية وبوابة شرق الدلتا',
+        icon: 'fa-wheat-awn',
+        economy: 'الزراعة وتجارة المحاصيل، التعليم الجامعي، الصناعات الغذائية',
+        landmarks: ['منطقة آثار تل بسطة', 'جامعة الزقازيق', 'متحف أحمد عرابي بقرية هرية رزنة'],
+        description: 'حاضرة محافظة الشرقية على ترعة مويس (بحر مويس)، وتعد مركزاً زراعياً وتجارياً وجامعياً رئيسياً بشرق الدلتا.'
+      },
+      {
+        id: 'damietta',
+        name: 'دمياط',
+        nameEn: 'Damietta',
+        region: 'delta',
+        lat: 31.4175,
+        lng: 31.8144,
+        population: 390000,
+        popFormatted: '390 ألف نسمة',
+        role: 'عاصمة صناعة الأثاث ومصب فرع دمياط',
+        icon: 'fa-couch',
+        economy: 'صناعة وتصدير الأثاث الخشبي، الموانئ وتسييل الغاز، الألبان والحلويات، الصيد',
+        landmarks: ['رأس البر (التقاء النيل بالبحر)', 'مدينة دمياط للأثاث', 'ميناء دمياط', 'مسجد عمرو بن العاص بدمياط'],
+        description: 'تقع عند مصب فرع دمياط بالبحر المتوسط، وتشتهر عالمياً بصناعة الأثاث المتقن وأسطول الصيد البحري الضخم.'
+      },
+      {
+        id: 'aswan',
+        name: 'أسوان',
+        nameEn: 'Aswan',
+        region: 'upper',
+        lat: 24.0889,
+        lng: 32.8998,
+        population: 400000,
+        popFormatted: '400 ألف نسمة',
+        role: 'بوابة مصر الجنوبية وعاصمة الطاقة والجرانيت',
+        icon: 'fa-sun',
+        economy: 'توليد الطاقة الكهرومائية والشمسية (بنبان)، السياحة الشتوية والأثرية، التعدين',
+        landmarks: ['السد العالي وبحيرة ناصر', 'معبد فيلة', 'جزيرة النباتات', 'متحف النوبة', 'مشروع بنبان للطاقة الشمسية'],
+        description: 'أجمل مشاتي العالم وبوابة مصر نحو أفريقيا، تحتضن السد العالي وبحيرة ناصر وتتميز بالثقافة النوبية العريقة.'
+      },
+      {
+        id: 'minya',
+        name: 'المنيا',
+        nameEn: 'Minya',
+        region: 'upper',
+        lat: 28.1099,
+        lng: 30.7503,
+        population: 380000,
+        popFormatted: '380 ألف نسمة',
+        role: 'عروس الصعيد',
+        icon: 'fa-water-ladder',
+        economy: 'الزراعة والصناعات الغذائية، المحاجر (الحجر الجيري الأبيض)، السياحة الأثرية',
+        landmarks: ['كورنيش النيل بالمنيا', 'تل العمارنة', 'مقابر بني حسن', 'منطقة الأشمونين وتونة الجبل'],
+        description: 'تلقب بعروس الصعيد لجمال موقعها وأطول كورنيش على نهر النيل، وتزخر بمواقع أثرية من مختلف العصور المصرية.'
+      },
+      {
+        id: 'luxor',
+        name: 'الأقصر',
+        nameEn: 'Luxor',
+        region: 'upper',
+        lat: 25.6872,
+        lng: 32.6396,
+        population: 420000,
+        popFormatted: '420 ألف نسمة',
+        role: 'عاصمة السياحة الأثرية العالمية (طيبة القديمة)',
+        icon: 'fa-gopuram',
+        economy: 'السياحة الثقافية والأثرية، الفنادق العائمة، الزراعة',
+        landmarks: ['معبد الكرنك ومعبد الأقصر', 'طريق الكباش', 'وادي الملوك ووادي الملكات', 'معبد الدير البحري'],
+        description: 'أكبر متحف مفتوح للآثار في العالم (طيبة عاصمة مصر القديمة)، تقسمها مياه النيل إلى البر الشرقي والبر الغربي.'
+      },
+      {
+        id: 'hurghada',
+        name: 'الغردقة',
+        nameEn: 'Hurghada',
+        region: 'redsea',
+        lat: 27.2579,
+        lng: 33.8116,
+        population: 280000,
+        popFormatted: '280 ألف نسمة',
+        role: 'عاصمة محافظة البحر الأحمر وسياحة الشعاب المرجانية',
+        icon: 'fa-umbrella-beach',
+        economy: 'السياحة الشاطئية والغوص، المنتجعات العالمية، التعدين والخدمات البحرية',
+        landmarks: ['جزر الجفتون', 'مارينا الغردقة', 'متحف الغردقة', 'منتجع الجونة وسهل حشيش'],
+        description: 'المركز السياحي الأول على ساحل البحر الأحمر، تشتهر بشعابها المرجانية النادرة ومنتجعاتها السياحية العالمية.'
+      },
+      {
+        id: 'sharm',
+        name: 'شرم الشيخ',
+        nameEn: 'Sharm El Sheikh',
+        region: 'redsea',
+        lat: 27.9158,
+        lng: 34.3300,
+        population: 140000,
+        popFormatted: '140 ألف نسمة',
+        role: 'مدينة السلام وسياحة المؤتمرات العالمية بجنوب سيناء',
+        icon: 'fa-dove',
+        economy: 'سياحة المؤتمرات الدولية، السياحة البيئية والغوص، الطيران والضيافة',
+        landmarks: ['محمية رأس محمد', 'خليج نعمة وسوهو سكوير', 'مسجد الصحابة بالسوق القديم', 'جزيرة تيران'],
+        description: 'تقع عند ملتقى خليجي العقبة والسويس بجنوب سيناء، وتعد العاصمة الأولى لسياحة المؤتمرات الدولية ومحميات الغوص.'
+      },
+      {
+        id: 'matrouh',
+        name: 'مرسى مطروح',
+        nameEn: 'Marsa Matrouh',
+        region: 'west',
+        lat: 31.3543,
+        lng: 27.2373,
+        population: 230000,
+        popFormatted: '230 ألف نسمة',
+        role: 'عاصمة الساحل الشمالي الغربي وبوابة مصر الغربية',
+        icon: 'fa-Compass',
+        economy: 'السياحة الصيفية الشاطئية، زراعة التين والزيتون، التجارة الحدودية والموانئ',
+        landmarks: ['شاطئ عجيبة والغرام', 'حمام كليوباترا', 'متحف روميل', 'مشاريع العلمين الجديدة ورأس الحكمة'],
+        description: 'بوابة مصر الغربية على ساحل البحر المتوسط، تتميز بخلجانها الفيروزية الطبيعية وتشهد طفرة عمرانية كبرى بالساحل الشمالي.'
+      }
+    ];
+
+    // ==========================================
+    // 3. متغيرات حالة الخريطة والتطبيق
+    // ==========================================
+    let map;
+    let currentBaseLayer = null;
+    let markersLayerGroup;
+    let egyptVectorGroup;
+    let markersById = {};
+    let activeRegion = 'all';
+    let showLabels = true;
+    let showVectors = true;
+    let selectedCityId = null;
+
+    // ==========================================
+    // 4. خوادم Esri الرسمية (تعمل في كافة المتصفحات بدون API Key أو حظر 403)
+    // ==========================================
+    const BASE_MAPS = {
+      esri_dark: {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+        options: {
+          maxZoom: 18,
+          className: 'esri-dark-filter',
+          attribution: 'Tiles &copy; Esri — Source: Esri, DeLorme, NAVTEQ, USGS'
+        }
+      },
+      satellite: {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        options: {
+          maxZoom: 18,
+          attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics'
+        }
+      },
+      streets: {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+        options: {
+          maxZoom: 18,
+          attribution: 'Tiles &copy; Esri — World Street Map'
+        }
+      },
+      natgeo: {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Physical_Map/MapServer/tile/{z}/{y}/{x}',
+        options: {
+          maxZoom: 8,
+          attribution: 'Tiles &copy; Esri — US National Park Service'
+        }
+      }
+    };
+
+    // ==========================================
+    // 5. تهيئة الخريطة التفاعلية
+    // ==========================================
+    function initMap() {
+      map = L.map('map', {
+        center: [27.3, 30.8],
+        zoom: 6,
+        minZoom: 5,
+        maxZoom: 17,
+        zoomControl: false
+      });
+
+      // وضع أزرار التكبير والتصغير في الأسفل يساراً
+      L.control.zoom({ position: 'topleft' }).addTo(map);
+
+      // تشغيل الخريطة الأساسية الافتراضية (الوضع الليلي من Esri)
+      switchBaseMap('esri_dark');
+
+      // إنشاء طبقة المتجهات الجغرافية (حدود مصر + نهر النيل + الدلتا + قناة السويس)
+      egyptVectorGroup = L.layerGroup().addTo(map);
+      drawEgyptGISVectors();
+
+      // إنشاء طبقة علامات المدن
+      markersLayerGroup = L.layerGroup().addTo(map);
+
+      // بناء واجهة المستخدم
+      renderRegionFilters();
+      renderLegend();
+      renderDistributionBar();
+      renderCityList();
+
+      // ربط البحث النصي
+      const searchInput = document.getElementById('search-input');
+      searchInput.addEventListener('input', () => {
+        const clearBtn = document.getElementById('clear-search');
+        clearBtn.classList.toggle('hidden', searchInput.value.trim() === '');
+        renderCityList();
+      });
+
+      // تحديد القاهرة افتراضياً لعرض البطاقة التعريفية
+      setTimeout(() => {
+        selectCity('cairo', false);
+      }, 400);
+    }
+
+    // ==========================================
+    // 6. رسم الخريطة المتجهية المدمجة لمصر ونهر النيل (Vector GIS Layer)
+    // ==========================================
+    function drawEgyptGISVectors() {
+      egyptVectorGroup.clearLayers();
+
+      // 1. مضلع الحدود السياسية التقريبية لجمهورية مصر العربية (البر الرئيسي + سيناء)
+      const egyptPolygonCoords = [
+        [31.6, 25.15], // السلوم
+        [31.35, 27.23], // مطروح
+        [30.9, 28.9],   // العلمين
+        [31.2, 29.91],  // الإسكندرية
+        [31.46, 30.36], // رشيد
+        [31.55, 31.0],  // البرلس
+        [31.52, 31.84], // رأس البر/دمياط
+        [31.26, 32.30], // بورسعيد
+        [31.15, 33.80], // العريش
+        [31.32, 34.22], // رفح
+        [29.50, 34.90], // طابا
+        [28.50, 34.52], // دهب
+        [27.73, 34.25], // رأس محمد
+        [29.96, 32.55], // السويس
+        [28.35, 33.10], // رأس غارب
+        [27.25, 33.81], // الغردقة
+        [25.07, 34.90], // مرسى علم
+        [23.96, 35.50], // برنيس
+        [22.00, 36.85], // حلايب
+        [22.00, 31.30], // بحيرة ناصر جنوباً
+        [22.00, 25.00], // جبل العوينات
+        [29.20, 25.00], // سيوة
+        [31.6, 25.15]   // إغلاق المضلع
+      ];
+
+      L.polygon(egyptPolygonCoords, {
+        color: '#f59e0b',
+        weight: 2,
+        opacity: 0.65,
+        dashArray: '6, 6',
+        fillColor: '#1e3a8a',
+        fillOpacity: 0.08,
+        interactive: false
+      }).addTo(egyptVectorGroup);
+
+      // 2. مضلع دلتا النيل الخصبة (المثلث الأخضر)
+      const deltaPolygon = [
+        [30.18, 31.13], // القناطر الخيرية
+        [31.46, 30.36], // مصب رشيد
+        [31.55, 31.10], // ساحل الدلتا الأوسط
+        [31.50, 31.84], // مصب دمياط
+        [30.58, 31.50], // الزقازيق
+        [30.18, 31.13]
+      ];
+      L.polygon(deltaPolygon, {
+        color: '#10b981',
+        weight: 1,
+        opacity: 0.4,
+        fillColor: '#10b981',
+        fillOpacity: 0.12,
+        interactive: false
+      }).addTo(egyptVectorGroup);
+
+      // 3. المجرى الرئيسي لنهر النيل من بحيرة ناصر حتى القناطر الخيرية
+      const nileMainStem = [
+        [22.00, 31.32],
+        [22.80, 32.05],
+        [23.60, 32.88],
+        [24.08, 32.89], // أسوان
+        [24.97, 32.87], // إدفو
+        [25.68, 32.63], // الأقصر
+        [26.15, 32.71], // قنا
+        [26.55, 31.69], // سوهاج
+        [27.18, 31.18], // أسيوط
+        [27.73, 30.84], // ملوي
+        [28.10, 30.75], // المنيا
+        [29.06, 31.09], // بني سويف
+        [30.04, 31.23], // القاهرة
+        [30.18, 31.13]  // تفرع الدلتا بالقناطر
+      ];
+
+      // توهج نهر النيل
+      L.polyline(nileMainStem, {
+        color: '#38bdf8',
+        weight: 6,
+        opacity: 0.25,
+        lineCap: 'round',
+        interactive: false
+      }).addTo(egyptVectorGroup);
+
+      // خط نهر النيل الأساسي
+      L.polyline(nileMainStem, {
+        color: '#0ea5e9',
+        weight: 2.5,
+        opacity: 0.85,
+        lineCap: 'round',
+        interactive: false
+      }).addTo(egyptVectorGroup);
+
+      // 4. فرع دمياط
+      const damiettaBranch = [
+        [30.18, 31.13],
+        [30.46, 31.18], // بنها
+        [30.70, 31.25], // ميت غمر / زفتى
+        [31.04, 31.37], // المنصورة
+        [31.41, 31.81]  // دمياط
+      ];
+      L.polyline(damiettaBranch, {
+        color: '#0ea5e9',
+        weight: 2,
+        opacity: 0.85,
+        interactive: false
+      }).addTo(egyptVectorGroup);
+
+      // 5. فرع رشيد
+      const rosettaBranch = [
+        [30.18, 31.13],
+        [30.80, 30.80], // كفر الزيات
+        [31.12, 30.65], // دسوق
+        [31.46, 30.36]  // رشيد
+      ];
+      L.polyline(rosettaBranch, {
+        color: '#0ea5e9',
+        weight: 2,
+        opacity: 0.85,
+        interactive: false
+      }).addTo(egyptVectorGroup);
+
+      // 6. المجرى الملاحي لقناة السويس
+      const suezCanalLine = [
+        [31.26, 32.30], // بورسعيد
+        [30.85, 32.31], // القنطرة
+        [30.59, 32.27], // الإسماعيلية
+        [30.32, 32.38], // البحيرات المرة
+        [29.96, 32.55]  // السويس
+      ];
+      L.polyline(suezCanalLine, {
+        color: '#22d3ee',
+        weight: 2.8,
+        dashArray: '4, 4',
+        opacity: 0.9,
+        interactive: false
+      }).addTo(egyptVectorGroup);
+
+      // 7. تسميات المسطحات المائية
+      L.marker([32.15, 29.8], { opacity: 0, interactive: false })
+        .bindTooltip('البحر الأبيض المتوسط', { permanent: true, direction: 'center', className: 'geo-water-label' })
+        .addTo(egyptVectorGroup);
+
+      L.marker([26.2, 34.8], { opacity: 0, interactive: false })
+        .bindTooltip('البحر الأحمر', { permanent: true, direction: 'center', className: 'geo-water-label' })
+        .addTo(egyptVectorGroup);
+    }
+
+    // ==========================================
+    // 7. تبديل أنماط الخرائط الأساسية (Basemaps)
+    // ==========================================
+    function switchBaseMap(type) {
+      if (currentBaseLayer) {
+        map.removeLayer(currentBaseLayer);
+        currentBaseLayer = null;
+      }
+
+      // إذا اختار المستخدم الأطلس المتجهي فقط، لا نضيف بلاطات خارجية ونعتمد على الخريطة المتجهية
+      if (type !== 'vector_only' && BASE_MAPS[type]) {
+        const cfg = BASE_MAPS[type];
+        currentBaseLayer = L.tileLayer(cfg.url, cfg.options);
+        currentBaseLayer.addTo(map);
+        currentBaseLayer.bringToBack();
+      }
+
+      // تحديث تنسيق الأزرار
+      document.querySelectorAll('.basemap-btn').forEach(btn => {
+        btn.className = 'basemap-btn px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:bg-slate-800/70';
+      });
+      const activeBtn = document.getElementById(`bm-${type}`);
+      if (activeBtn) {
+        activeBtn.className = 'basemap-btn px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-amber-500 text-nile-950 shadow';
+      }
+    }
+
+    // إظهار أو إخفاء طبقة النيل والحدود
+    function toggleEgyptVectors() {
+      showVectors = !showVectors;
+      const btn = document.getElementById('btn-toggle-vectors');
+      if (showVectors) {
+        egyptVectorGroup.addTo(map);
+        btn.classList.add('bg-amber-500/15', 'text-amber-300', 'border-amber-500/40');
+        btn.classList.remove('bg-slate-800', 'text-slate-400', 'border-slate-700');
+      } else {
+        map.removeLayer(egyptVectorGroup);
+        btn.classList.remove('bg-amber-500/15', 'text-amber-300', 'border-amber-500/40');
+        btn.classList.add('bg-slate-800', 'text-slate-400', 'border-slate-700');
+      }
+    }
+
+    // ==========================================
+    // 8. حساب الحجم النسبي للعلامة حسب عدد السكان
+    // ==========================================
+    function getMarkerSize(population) {
+      if (population >= 5000000) return 40;
+      if (population >= 1000000) return 34;
+      if (population >= 600000) return 29;
+      if (population >= 400000) return 26;
+      return 23;
+    }
+
+    // ==========================================
+    // 9. إنشاء وتحديث علامات المدن والقائمة الجانبية
+    // ==========================================
+    function getFilteredAndSortedCities() {
+      const query = document.getElementById('search-input').value.trim().toLowerCase();
+      const sortBy = document.getElementById('sort-select').value;
+
+      let filtered = EGYPT_CITIES.filter(city => {
+        const matchesRegion = activeRegion === 'all' || city.region === activeRegion;
+        const regionName = REGIONS[city.region].name;
+        const matchesQuery =
+          !query ||
+          city.name.toLowerCase().includes(query) ||
+          city.nameEn.toLowerCase().includes(query) ||
+          city.role.toLowerCase().includes(query) ||
+          city.economy.toLowerCase().includes(query) ||
+          regionName.toLowerCase().includes(query);
+        return matchesRegion && matchesQuery;
+      });
+
+      filtered.sort((a, b) => {
+        if (sortBy === 'pop-desc') return b.population - a.population;
+        if (sortBy === 'pop-asc') return a.population - b.population;
+        if (sortBy === 'name-asc') return a.name.localeCompare(b.name, 'ar');
+        if (sortBy === 'north-south') return b.lat - a.lat;
+        return 0;
+      });
+
+      return filtered;
+    }
+
+    function renderCityList() {
+      const cities = getFilteredAndSortedCities();
+      const listContainer = document.getElementById('cities-list');
+      listContainer.innerHTML = '';
+
+      // تحديث الإحصائيات العلوية
+      document.getElementById('active-filter-count').textContent = `المعروض (${cities.length})`;
+      document.getElementById('stat-cities-count').textContent = `${cities.length} مدينة`;
+      const totalPop = cities.reduce((acc, c) => acc + c.population, 0);
+      document.getElementById('stat-total-pop').textContent = `${(totalPop / 1000000).toFixed(1)} مليون نسمة`;
+
+      // إعادة رسم العلامات على الخريطة
+      markersLayerGroup.clearLayers();
+      markersById = {};
+
+      // ترتيب المدن تنازلياً لمعرفة الترتيب الوطني لكل مدينة
+      const nationalRanking = [...EGYPT_CITIES].sort((a, b) => b.population - a.population);
+
+      if (cities.length === 0) {
+        listContainer.innerHTML = `
+          <div class="text-center py-12 px-4 text-slate-400">
+            <i class="fa-solid fa-map-location-dot text-3xl text-slate-600 mb-2"></i>
+            <p class="text-xs font-bold text-slate-300">لا توجد مدن مطابقة لبحثك</p>
+            <button onclick="clearSearch(); setRegionFilter('all')" class="mt-3 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 text-xs font-bold hover:bg-amber-500/30">
+              إعادة عرض كل المدن
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      cities.forEach(city => {
+        const regColor = REGIONS[city.region].color;
+        const size = getMarkerSize(city.population);
+        const rank = nationalRanking.findIndex(c => c.id === city.id) + 1;
+        const popPercent = Math.min(100, Math.max(8, (city.population / 10300000) * 100));
+
+        // 1. إنشاء العلامة المخصصة على الخريطة
+        const customIcon = L.divIcon({
+          className: 'custom-div-icon',
+          html: `
+            <div class="city-marker-wrapper" style="width:${size}px; height:${size}px;">
+              <div class="city-pulse" style="width:${size}px; height:${size}px; background:${regColor};"></div>
+              <div class="city-core" style="width:${size}px; height:${size}px; background:${regColor};">
+                <i class="fa-solid ${city.icon} text-white" style="font-size:${Math.max(10, Math.floor(size * 0.42))}px;"></i>
+              </div>
+            </div>
+          `,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
+          popupAnchor: [0, -(size / 2)]
+        });
+
+        const marker = L.marker([city.lat, city.lng], { icon: customIcon });
+
+        // محتوى النافذة المنبثقة (Popup)
+        const popupHTML = `
+          <div class="p-3.5 font-cairo">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs" style="background:${regColor}">
+                  <i class="fa-solid ${city.icon}"></i>
+                </span>
+                <div>
+                  <div class="font-extrabold text-sm text-white">${city.name} <span class="text-[10px] text-slate-400 font-normal">${city.nameEn}</span></div>
+                  <div class="text-[10px] font-bold" style="color:${regColor}">${REGIONS[city.region].name}</div>
+                </div>
+              </div>
+              <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-slate-800 text-amber-400">#${rank}</span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-relaxed mb-2.5">${city.description}</p>
+            <div class="flex items-center justify-between text-[11px] bg-nile-950/90 px-2.5 py-1.5 rounded-lg border border-slate-800">
+              <span class="text-slate-400">عدد السكان:</span>
+              <span class="font-extrabold text-amber-400">${city.popFormatted}</span>
+            </div>
+          </div>
+        `;
+        marker.bindPopup(popupHTML);
+
+        if (showLabels) {
+          marker.bindTooltip(city.name, {
+            permanent: true,
+            direction: 'top',
+            offset: [0, -(size / 2) - 4],
+            className: 'city-label-tooltip'
+          });
+        }
+
+        marker.on('click', () => {
+          selectCity(city.id, false);
+        });
+
+        marker.addTo(markersLayerGroup);
+        markersById[city.id] = marker;
+
+        // 2. إنشاء بطاقة المدينة في القائمة الجانبية
+        const isSelected = selectedCityId === city.id;
+        const item = document.createElement('div');
+        item.id = `list-item-${city.id}`;
+        item.onclick = () => selectCity(city.id, true);
+        item.className = `p-3 rounded-xl border transition cursor-pointer ${
+          isSelected
+            ? 'bg-amber-500/15 border-amber-400 shadow-md'
+            : 'bg-nile-950/65 hover:bg-nile-900/90 border-slate-800/90 hover:border-slate-700'
+        }`;
+
+        item.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs shrink-0 shadow" style="background:${regColor}">
+                <i class="fa-solid ${city.icon}"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <h3 class="text-xs font-extrabold text-white">${city.name}</h3>
+                  <span class="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-bold">#${rank}</span>
+                </div>
+                <p class="text-[10px] text-slate-400 line-clamp-1">${city.role}</p>
+              </div>
+            </div>
+            <div class="text-left shrink-0">
+              <div class="text-xs font-extrabold text-amber-400">${city.popFormatted.replace(' نسمة', '')}</div>
+              <div class="text-[10px] font-semibold" style="color:${regColor}">${REGIONS[city.region].name}</div>
+            </div>
+          </div>
+          <!-- شريط نسبي لعدد السكان -->
+          <div class="w-full h-1 bg-slate-800 rounded-full overflow-hidden mt-2">
+            <div class="h-full rounded-full" style="width:${popPercent}%; background:${regColor}"></div>
+          </div>
+        `;
+
+        listContainer.appendChild(item);
+      });
+    }
+
+    // ==========================================
+    // 10. اختيار مدينة وعرض بطاقتها التفصيلية
+    // ==========================================
+    function selectCity(cityId, flyToCity = true) {
+      const city = EGYPT_CITIES.find(c => c.id === cityId);
+      if (!city) return;
+
+      selectedCityId = cityId;
+      const regColor = REGIONS[city.region].color;
+      const nationalRanking = [...EGYPT_CITIES].sort((a, b) => b.population - a.population);
+      const rank = nationalRanking.findIndex(c => c.id === city.id) + 1;
+
+      // تحديث البطاقة السفلية
+      const card = document.getElementById('selected-city-card');
+      card.classList.remove('hidden');
+
+      const iconBox = document.getElementById('card-icon-box');
+      iconBox.style.background = regColor;
+      document.getElementById('card-icon').className = `fa-solid ${city.icon}`;
+
+      document.getElementById('card-title').textContent = city.name;
+      document.getElementById('card-en-title').textContent = city.nameEn;
+
+      const badge = document.getElementById('card-region-badge');
+      badge.textContent = REGIONS[city.region].name;
+      badge.style.backgroundColor = `${regColor}25`;
+      badge.style.color = regColor;
+      badge.style.border = `1px solid ${regColor}60`;
+
+      document.getElementById('card-desc').textContent = city.description;
+      document.getElementById('card-pop').textContent = city.popFormatted.replace(' نسمة', '');
+      document.getElementById('card-rank').textContent = `المركز #${rank}`;
+      document.getElementById('card-coords').textContent = `${city.lat.toFixed(2)}°N, ${city.lng.toFixed(2)}°E`;
+      document.getElementById('card-economy').textContent = city.economy;
+
+      const landmarksContainer = document.getElementById('card-landmarks');
+      landmarksContainer.innerHTML = city.landmarks
+        .map(lm => `<span class="px-2 py-0.5 rounded-md bg-slate-800/90 border border-slate-700 text-[10px] text-slate-200">${lm}</span>`)
+        .join('');
+
+      document.getElementById('card-zoom-btn').onclick = () => {
+        map.flyTo([city.lat, city.lng], 11, { duration: 1.2 });
+        if (markersById[city.id]) markersById[city.id].openPopup();
+      };
+
+      // تحريك الكاميرا وفتح النافذة المنبثقة
+      if (flyToCity) {
+        map.flyTo([city.lat, city.lng], 9, { duration: 1.1 });
+        if (markersById[city.id]) {
+          markersById[city.id].openPopup();
+        }
+        // إغلاق القائمة الجانبية في الموبايل عند اختيار مدينة
+        if (window.innerWidth < 1024) {
+          document.getElementById('sidebar').classList.add('translate-x-full');
+        }
+      }
+
+      // تمييز البطاقة في القائمة
+      document.querySelectorAll('#cities-list > div').forEach(el => {
+        el.className = 'p-3 rounded-xl border transition cursor-pointer bg-nile-950/65 hover:bg-nile-900/90 border-slate-800/90 hover:border-slate-700';
+      });
+      const activeItem = document.getElementById(`list-item-${city.id}`);
+      if (activeItem) {
+        activeItem.className = 'p-3 rounded-xl border transition cursor-pointer bg-amber-500/15 border-amber-400 shadow-md';
+        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+
+    function closeCityCard() {
+      document.getElementById('selected-city-card').classList.add('hidden');
+    }
+
+    // ==========================================
+    // 11. الفلاتر الإقليمية والأدوات المساعدة
+    // ==========================================
+    function renderRegionFilters() {
+      const container = document.getElementById('region-filters');
+      container.innerHTML = '';
+
+      Object.entries(REGIONS).forEach(([key, reg]) => {
+        const count = key === 'all' ? EGYPT_CITIES.length : EGYPT_CITIES.filter(c => c.region === key).length;
+        const isActive = activeRegion === key;
+
+        const btn = document.createElement('button');
+        btn.onclick = () => setRegionFilter(key);
+        btn.className = `px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition flex items-center gap-1.5 border ${
+          isActive
+            ? 'bg-amber-500 text-nile-950 border-amber-400 shadow'
+            : 'bg-nile-950/80 text-slate-300 border-slate-800 hover:border-slate-600'
+        }`;
+
+        btn.innerHTML = `
+          <span class="w-2 h-2 rounded-full" style="background:${reg.color}"></span>
+          <span>${reg.name}</span>
+          <span class="text-[10px] opacity-75">(${count})</span>
+        `;
+        container.appendChild(btn);
+      });
+    }
+
+    function setRegionFilter(regionKey) {
+      activeRegion = regionKey;
+      renderRegionFilters();
+      renderCityList();
+
+      // ضبط حدود الكاميرا لتشمل المدن المفلترة
+      const filtered = getFilteredAndSortedCities();
+      if (filtered.length > 0) {
+        const bounds = L.latLngBounds(filtered.map(c => [c.lat, c.lng]));
+        map.flyToBounds(bounds.pad(0.25), { duration: 1.1, maxZoom: 9 });
+      }
+    }
+
+    function renderLegend() {
+      const legendContainer = document.getElementById('map-legend-items');
+      legendContainer.innerHTML = '';
+      Object.entries(REGIONS).forEach(([key, reg]) => {
+        if (key === 'all') return;
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-1.5 text-slate-300';
+        div.innerHTML = `
+          <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${reg.color}"></span>
+          <span class="truncate">${reg.name}</span>
+        `;
+        legendContainer.appendChild(div);
+      });
+    }
+
+    function renderDistributionBar() {
+      const bar = document.getElementById('region-distribution-bar');
+      bar.innerHTML = '';
+      const totalPop = EGYPT_CITIES.reduce((s, c) => s + c.population, 0);
+
+      Object.entries(REGIONS).forEach(([key, reg]) => {
+        if (key === 'all') return;
+        const regPop = EGYPT_CITIES.filter(c => c.region === key).reduce((s, c) => s + c.population, 0);
+        const pct = ((regPop / totalPop) * 100).toFixed(1);
+        const seg = document.createElement('div');
+        seg.style.width = `${pct}%`;
+        seg.style.backgroundColor = reg.color;
+        seg.title = `${reg.name}: ${pct}%`;
+        bar.appendChild(seg);
+      });
+    }
+
+    function toggleCityLabels(checked) {
+      showLabels = checked;
+      renderCityList();
+    }
+
+    function clearSearch() {
+      const input = document.getElementById('search-input');
+      input.value = '';
+      document.getElementById('clear-search').classList.add('hidden');
+      renderCityList();
+    }
+
+    function resetMapView() {
+      map.flyTo([27.3, 30.8], 6, { duration: 1.1 });
+      map.closePopup();
+    }
+
+    function toggleMobileSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      sidebar.classList.toggle('translate-x-full');
+    }
+
+    // تشغيل التطبيق عند تحميل الصفحة
+    window.addEventListener('DOMContentLoaded', initMap);
+  </script>
+</body>
+</html>
